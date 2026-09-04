@@ -1,5 +1,4 @@
 // src/LandingScreen.tsx
-import React from 'react';
 
 interface LandingScreenProps {
   onEnter: () => void;
