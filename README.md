@@ -1,214 +1,218 @@
-Recourse
+# Recourse
 
-AI-Assisted Chargeback Defense & Decision Engine
-
-Recourse helps merchants decide whether a chargeback is worth defending.
-
-Given a disputed transaction, Recourse combines structured transaction evidence, customer history, fulfillment signals, merchant interactions, and the customer’s dispute narrative to produce an auditable DEFEND, ACCEPT, or REVIEW decision.
-
-The core question is simple:
+### AI-Assisted Chargeback Defense
 
 Should a merchant spend resources defending this chargeback?
 
-⸻
+Recourse answers that question by combining a statistical risk model, economic reasoning, and LLM-powered evidence verification.
 
-How It Works
+Every case ends in one of three actions:
 
-Recourse deliberately separates prediction, economics, and language-model reasoning.
+**🟢 DEFEND** · **🔴 ACCEPT** · **🟡 REVIEW**
 
-                    CHARGEBACK
-                        │
-          ┌─────────────┴─────────────┐
-          │                           │
-          ▼                           ▼
-  Structured evidence           Dispute narrative
-          │                           │
-          ▼                           ▼
- Logistic Regression               Gemini
-          │                           │
-          ▼                    Evidence extraction
-       P(win)                         │
-          │                    ┌──────┴──────┐
-          │                    │             │
-          │              contradiction   new signal
-          │                    │
-          └────────────┬───────┘
-                       ▼
-                Economic layer
-                       │
-                       ▼
-              DEFEND / ACCEPT
-                       │
-          high-confidence grounded
-             contradiction?
-                       │
-                       ▼
-                    REVIEW
+---
 
-1. Structured risk model
+## The Idea
 
-A Logistic Regression model estimates:
+Chargeback decisions shouldn’t be based on a single prediction.
 
-P(win) = probability that the merchant successfully defends the chargeback.
+Recourse separates the problem into three layers:
 
-The model uses only observable transaction and merchant evidence.
+| Layer | What it does |
+| :--- | :--- |
+| **Risk Model** | Estimates the probability of successfully defending the chargeback |
+| **Economic Layer** | Determines whether defending is economically worthwhile |
+| **Gemini Evidence Layer** | Interprets dispute narratives and detects grounded contradictions |
 
-Hidden outcome fields such as the actual outcome, recovery amount, and defense cost are never exposed to the inference model.
+The LLM does not make the final decision.
 
-2. Economic decision layer
+---
 
-A prediction alone is not enough.
+## Architecture
 
+```mermaid
+flowchart TD
+    A[Chargeback] --> B[Structured Evidence]
+    A --> C[Dispute Narrative]
+    B --> D[Logistic Regression]
+    D --> E[P win]
+    C --> F[Gemini]
+    F --> G[Evidence Extraction]
+    E --> H[Economic Layer]
+    G --> I{Grounded Contradiction?}
+    H --> J[DEFEND / ACCEPT]
+    I -->|High confidence| K[REVIEW]
+    I -->|No contradiction| J
+```
+
+**Why this separation?**
+
+* Logistic Regression handles structured predictive risk.
+* Economic logic converts probability into expected merchant value.
+* Gemini handles free-form customer narratives.
+* Grounding rules prevent unsupported LLM claims from changing the decision.
+* Human review handles ambiguity and high-confidence contradictions.
+
+---
+
+## How a Decision Works
+
+### 1. Predict
+The Logistic Regression model estimates:
+
+$$\text{P(win)} = \text{probability of successfully defending the chargeback}$$
+
+Only observable transaction and merchant evidence is used.
+
+### 2. Calculate
 Recourse estimates:
-
 * Expected recovery
-* Estimated defense cost
+* Defense cost
 * Expected net value
 
-The economic layer converts the predicted probability into an actionable merchant decision.
+$$\text{Expected recovery} = \text{P(win)} \times \text{transaction amount}$$
+$$\text{Expected net value} = \text{Expected recovery} - \text{defense cost}$$
 
-3. Gemini evidence layer
-
-Customer dispute narratives contain information that is difficult to represent as structured features.
-
-Gemini is therefore used as an evidence interpreter, not as the primary classifier.
-
-It extracts:
-
+### 3. Verify
+Gemini analyzes the customer’s dispute narrative and extracts:
 * Customer claim
 * Claim confidence
-* Whether the narrative contradicts merchant evidence
+* Merchant-evidence contradiction
 * Contradiction confidence
 * Grounded contradiction detail
-* Whether the narrative contains a meaningful new signal
+* New signal
 
-The LLM does not receive hidden outcomes and does not directly decide DEFEND or ACCEPT.
+### 4. Escalate when necessary
+A high-confidence contradiction is not allowed to silently override the model.
 
-4. Grounded REVIEW safeguard
+Instead:
 
-LLM output is never blindly trusted.
+> **🟡 REVIEW** — human verification required
 
-A contradiction is accepted only when the explanation can be grounded against an actual supplied merchant evidence field.
+If Gemini fails, produces invalid output, or cannot ground its claim against merchant evidence, Recourse safely falls back to **REVIEW**.
 
-A high-confidence grounded contradiction routes the case to:
+---
 
-REVIEW — human verification required
+## Decision Outcomes
 
-If the LLM fails, produces invalid output, or cannot be grounded, Recourse safely falls back to human review rather than making an unsupported automated decision.
+* **🟢 DEFEND**  
+  The structured model and economic layer indicate that defending the chargeback has sufficient expected value, with no high-confidence grounded contradiction requiring review.
 
-⸻
+* **🔴 ACCEPT**  
+  The expected recovery does not justify the estimated defense cost.
 
-Decision Outcomes
+* **🟡 REVIEW**  
+  The case requires human attention, for example because:
+  * The customer’s narrative directly contradicts merchant evidence with high confidence.
+  * The predicted win probability falls into the configured review band.
+  * LLM evidence extraction or validation fails.
 
-DEFEND
+REVIEW is a safety mechanism rather than treating every decision as a binary prediction.
 
-The structured model and economic layer indicate that defending the chargeback has sufficient expected value, with no high-confidence grounded contradiction requiring review.
+---
 
-ACCEPT
+## Example
 
-The expected recovery does not justify the estimated defense cost.
+**Customer says**
+> “Tracking says delivered, but I never received the package.”
 
-REVIEW
+**Merchant evidence**
+```json
+{
+  "delivered": true,
+  "delivery_confirmed": true
+}
+```
 
-The case requires human attention, for example because:
+**Gemini finds**
+* Customer claim: `item_not_received`
+* Contradiction: `true`
+* Confidence: `0.95`
 
-* The customer’s narrative directly contradicts merchant evidence with high confidence.
-* The predicted win probability falls into the configured review band.
-* LLM evidence extraction or validation fails.
+**Recourse decides**
+> **🟡 REVIEW**
 
-This makes REVIEW a safety mechanism rather than treating every decision as a binary prediction.
+The underlying model prediction and economics remain visible:
 
-⸻
+| Metric | Value |
+| :--- | :--- |
+| P(win) | 51.4% |
+| Expected recovery | ₹2,492 |
+| Defense cost | ₹271 |
+| Expected net | ₹2,221 |
 
-Why Use an LLM Separately?
+The LLM supplies evidence, not an uncalibrated replacement probability.
+
+---
+
+## Why Use an LLM Separately?
 
 We tested whether narrative-derived signals should simply be added to the predictive classifier.
 
-A deterministic heuristic proxy for the LLM-derived signals was evaluated on the same frozen train/validation/test methodology. The additional signals did not improve held-out classification performance.
+A deterministic heuristic proxy for LLM-derived signals was evaluated using the same frozen train/validation/test methodology.
 
-Rather than forcing the LLM into the classifier, Recourse deliberately uses it where it adds a different capability:
+The additional signals did not improve held-out classification performance.
 
-The statistical model predicts risk. The LLM interprets the narrative. The economic layer makes the decision. The grounding layer controls when human review is required.
+Rather than forcing an LLM into the classifier, Recourse deliberately gives each component a focused responsibility:
 
-This separation also prevents an LLM’s uncalibrated confidence from being mistaken for a probability of winning.
+* **Model predicts.**
+* **Economics decides.**
+* **Gemini interprets.**
+* **Grounding safeguards.**
+* **Humans review ambiguity.**
 
-⸻
+This keeps the system measurable and auditable while using an LLM where it provides a different capability.
 
-Evaluation
+---
 
-Recourse was evaluated using a frozen synthetic dataset of 600 chargebacks.
+## Evaluation
 
-The data is split into:
+Recourse uses a frozen synthetic dataset of 600 chargebacks.
 
-* 360 training cases
-* 120 validation cases
-* 120 held-out test cases
+| Split | Cases |
+| :--- | :--- |
+| Training | 360 |
+| Validation | 120 |
+| Held-out test | 120 |
 
 The split is fixed and stratified by chargeback outcome.
 
-Thresholds and model choices are selected using training/validation data. The held-out test set remains untouched until final evaluation.
+The held-out test set is not used for model or threshold selection.
 
-Held-out test results
+### Held-out Results
 
-The baseline comparison includes:
+| Strategy | Net Merchant Recovery |
+| :--- | :--- |
+| Always Accept | ₹0.00 |
+| Rules baseline | ₹107,843.32 |
+| Logistic Regression | ₹152,451.19 |
+| Always Defend | ₹151,812.20 |
+| Oracle | ₹164,654.43 |
 
-Strategy	Net Merchant Recovery
-Always Accept	₹0.00
-Rules baseline	₹107,843.32
-Logistic Regression	₹152,451.19
-Always Defend	₹151,812.20
-Oracle	₹164,654.43
+### Logistic Regression — Held-Out Test
 
-For the deployed Logistic Regression configuration on the held-out test set:
+| Metric | Result |
+| :--- | :--- |
+| Precision | 54.8% |
+| Recall | 98.4% |
+| False-positive rate | 92.9% |
+| Defend rate | 95.8% |
+| Recovery | ₹178,876.88 |
+| Defense cost | ₹26,425.69 |
+| Net recovery | ₹152,451.19 |
+| Foregone recovery | ₹525.37 |
 
-* Precision: 54.8%
-* Recall: 98.4%
-* FPR: 92.9%
-* Defend rate: 95.8%
-* Recovered: ₹178,876.88
-* Defense cost: ₹26,425.69
-* Net merchant recovery: ₹152,451.19
-* Foregone recovery: ₹525.37
+> **Important limitation:** The current synthetic dataset produces a highly defense-heavy classifier. Its net recovery is only modestly above the always-defend baseline. We therefore do not claim that the predictive model is production-optimal.
 
-These numbers are reported on the held-out test set and should not be interpreted as production performance.
+The evaluation demonstrates a reproducible decision framework with explicit leakage controls, economic reasoning, evidence verification, and human-review escalation.
 
-Important limitation
+---
 
-The current synthetic dataset produces a Logistic Regression policy that is highly defense-heavy. Its held-out net recovery is only modestly above the always-defend baseline.
+## Data Boundaries
 
-Recourse therefore does not claim that the predictive model is already optimal.
+Recourse explicitly separates observable evidence from hidden outcomes.
 
-Instead, the project demonstrates a complete decision framework with:
-
-* Reproducible evaluation
-* Leakage controls
-* Economic decision-making
-* Unstructured evidence interpretation
-* Grounded contradiction detection
-* Human-review escalation
-
-⸻
-
-Initial Dispute Types
-
-Recourse currently supports:
-
-* ITEM_NOT_RECEIVED
-* UNAUTHORIZED_TRANSACTION
-* PRODUCT_NOT_AS_DESCRIBED
-
-The Gemini evidence layer can also return other when the narrative does not cleanly fit these categories.
-
-⸻
-
-Safety & Data Boundaries
-
-The inference path intentionally separates observable evidence from hidden outcomes.
-
-Observable evidence
-
-Examples include:
-
+### Observable Evidence
 * Transaction amount and age
 * Payment method
 * Account history
@@ -223,74 +227,69 @@ Examples include:
 * Dispute type
 * Dispute narrative
 
-Hidden outcome data
-
-Used only for offline evaluation/training:
-
+### Hidden — Evaluation/Training Only
 * Actual defensibility
 * Actual win/loss outcome
 * Actual recovery amount
 * Defense cost
 * Dataset split assignment
 
-Hidden outcomes are not sent to Gemini and are not accepted through the public decision API.
+Hidden outcomes are:
+* ❌ Never accepted by the public API
+* ❌ Never sent to Gemini
+* ❌ Never used during inference
 
-⸻
+---
 
-API
+## Supported Disputes
 
-Start the service:
+* `ITEM_NOT_RECEIVED`
+* `UNAUTHORIZED_TRANSACTION`
+* `PRODUCT_NOT_AS_DESCRIBED`
 
+Gemini may return `other` when a narrative does not cleanly fit these categories.
+
+---
+
+## API
+
+### Run Locally
+
+```bash
+python3 -m pip install -r requirements.txt
+export GEMINI_API_KEY="your-key"
 python3 -m uvicorn app.main:app --reload
+```
 
-Health check:
+Then open:
+```text
+http://localhost:8000/docs
+```
 
-GET /health
+### Endpoints
 
-Decision endpoint:
+| Endpoint | Purpose |
+| :--- | :--- |
+| `GET /` | Service information |
+| `GET /health` | Health check |
+| `POST /decide` | Analyze a chargeback |
+| `GET /docs` | Interactive API documentation |
 
-POST /decide
-
-Interactive API documentation:
-
-GET /docs
-
-The API returns:
-
+The decision response includes:
 * Final decision
 * P(win)
 * Expected recovery
-* Estimated defense cost
+* Defense cost
 * Expected net value
 * Gemini evidence
 * Review reason
 * Auditable reasoning
 
-⸻
+---
 
-Example
+## Project Structure
 
-A customer claims:
-
-“Tracking says delivered, but I never received the package.”
-
-while merchant evidence contains:
-
-delivered = true
-delivery_confirmed = true
-
-Gemini identifies the customer’s claim and detects the contradiction.
-
-Recourse verifies that the contradiction is grounded in the supplied evidence and routes the case to:
-
-REVIEW
-
-The statistical P(win) and economic calculations remain visible rather than being overwritten by the LLM.
-
-⸻
-
-Project Structure
-
+```text
 recourse/
 ├── app/
 │   ├── main.py
@@ -298,15 +297,15 @@ recourse/
 │   └── service.py
 │
 ├── models/
-│   ├── economic_decision.py
 │   ├── logistic_regression.py
+│   ├── economic_decision.py
 │   ├── llm_evidence.py
 │   └── gemini_provider.py
 │
 ├── evaluation/
-│   ├── llm_ablation.py
 │   ├── evaluate_model.py
 │   ├── evaluate_economic_policy.py
+│   ├── llm_ablation.py
 │   ├── credibility.py
 │   └── ...
 │
@@ -316,26 +315,24 @@ recourse/
 │   ├── split_assignments.csv
 │   └── schema.md
 │
+├── tests/
+├── requirements.txt
+├── .gitignore
 └── README.md
+```
 
-⸻
+---
 
-Design Principles
+## Design Principles
 
 AI should only be used where it adds value.
 
-Recourse intentionally avoids making the LLM responsible for everything.
+* **Predictive model** → structured risk
+* **Economic layer** → expected merchant value
+* **Gemini** → unstructured evidence
+* **Grounding rules** → prevent unsupported claims
+* **Human review** → handle ambiguity and contradiction
 
-Logistic Regression handles structured risk prediction.
+The goal is not to make Recourse maximally AI-heavy.
 
-Economic logic handles expected-value decisions.
-
-Gemini interprets unstructured dispute narratives.
-
-Grounding and deterministic rules prevent unsupported LLM output from silently changing the decision.
-
-Human review is used when automated evidence is ambiguous or contradictory.
-
-The goal is not to make the system maximally AI-heavy.
-
-The goal is to make it measurable, auditable, economically useful, and safe to automate.
+The goal is to make chargeback decisions measurable, economically useful, explainable, and safe to automate.
