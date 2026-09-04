@@ -1,0 +1,50 @@
+Python
+
+pycache/
+*.py[cod]
+*.pyo
+*.pyd
+
+Virtual environment
+
+.venv/
+venv/
+env/
+
+Environment variables / secrets
+
+.env
+.env.*
+!.env.example
+
+macOS
+
+.DS_Store
+
+IDEs / editors
+
+.vscode/
+.idea/
+
+Test / coverage artifacts
+
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+Build artifacts
+
+build/
+dist/
+*.egg-info/
+
+Logs
+
+*.log
+
+Local generated files
+
+*.tmp
+*.bak
