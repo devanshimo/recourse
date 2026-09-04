@@ -52,14 +52,49 @@ Rules:
 
 1. Identify the customer's main claim.
 2. Give a confidence from 0.0 to 1.0.
-3. A contradiction is valid ONLY when the customer's claim directly conflicts
-   with a supplied merchant evidence field.
-4. If there is a contradiction, contradiction_detail MUST explicitly contain
-   the exact evidence field=value that creates the contradiction.
-5. If there is no grounded contradiction, set contradiction confidence low
-   and say that no grounded contradiction was identified.
-6. Set new_signal_present=true only when the narrative contains meaningful
-   information that is not represented in the merchant evidence.
+3. Before setting contradicts_merchant_evidence, identify the SPECIFIC fact
+   the customer is asserting, such as:
+   - "the package was not received"
+   - "the item was defective"
+   - "the transaction was not authorized by me"
+
+4. A contradiction exists ONLY if a supplied structured merchant evidence
+   field asserts the DIRECT OPPOSITE of that same specific fact.
+
+   Do NOT treat the following as contradictions:
+   - related or thematically adjacent evidence
+   - evidence that merely makes the customer's claim less likely
+   - evidence that supports the merchant without directly denying the claim
+   - missing or absent evidence
+   - evidence about a different fact
+
+   Examples:
+   - Customer says "I did not authorize this transaction" +
+     device_seen_before=True → NOT a contradiction.
+   - Customer says "I did not authorize this transaction" +
+     location_consistent=True → NOT a contradiction.
+   - Customer says "the item was defective" +
+     delivered=False → NOT a contradiction.
+   - Customer says "I never received the package" +
+     delivered=True → contradiction.
+   - Customer says "I never received the package" +
+     delivery_confirmed=True → contradiction.
+
+5. If you cannot name a specific supplied merchant evidence field that
+   directly asserts the opposite of the customer's specific claim, set:
+   contradicts_merchant_evidence=false
+   contradiction_confidence=0.0
+   contradiction_detail="No grounded contradiction identified."
+
+6. If there is a contradiction, contradiction_detail MUST explicitly contain
+   the exact supplied evidence field=value that creates the contradiction.
+
+7. When uncertain whether evidence is a direct contradiction or merely
+   related/supporting evidence, default to:
+   contradicts_merchant_evidence=false.
+
+8. contradiction_confidence reflects how directly the evidence denies the
+   specific customer claim, NOT how much merchant evidence exists overall.
 """
 
         response = self.client.models.generate_content(
