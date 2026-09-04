@@ -12,7 +12,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173",
-    https://recourse-frontend-production.up.railway.app,
+    "https://recourse-frontend-production.up.railway.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
