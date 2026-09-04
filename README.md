@@ -150,6 +150,7 @@ The LLM supplies evidence, not an uncalibrated replacement probability.
 We tested whether narrative-derived signals should simply be added to the predictive classifier.
 
 A deterministic heuristic proxy for LLM-derived signals was evaluated using the same frozen train/validation/test methodology.
+This was not a live-Gemini experiment.
 
 The additional signals did not improve held-out classification performance.
 
